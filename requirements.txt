@@ -5,3 +5,5 @@ networkx
 pyvis
 plotly
 python-dateutil
+google-auth
+google-cloud-aiplatform
