@@ -11,6 +11,24 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from functools import lru_cache
 from pymongo import ASCENDING, DESCENDING
+from google.oauth2 import service_account
+from google.cloud import storage
+import tempfile
+import os
+import urllib.parse
+
+# make the Streamlit wide view
+# Set Streamlit to wide mode
+st.set_page_config(layout="wide")
+
+
+
+credentials = service_account.Credentials.from_service_account_info(
+    st.secrets["gcp_service_account"]
+)
+storage_client = storage.Client(credentials=credentials)
+
+# GOOGLE_APPLICATION_CREDENTIALS = "marvad-ai-d55e9d1dc69a.json"
 
 # Add this at the beginning of your script, right after the imports
 def check_password():
@@ -81,6 +99,15 @@ if check_password():
 
     def get_edge_width(score, min_width=0.5, max_width=2):
         return min_width + (max_width - min_width) * score
+
+    def get_pdf_url(bucket_name, blob_name):
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+        return blob.generate_signed_url(expiration=timedelta(minutes=30))
+    
+    def get_google_drive_viewer_url(pdf_url):
+        encoded_url = urllib.parse.quote(pdf_url, safe='')
+        return f"https://drive.google.com/viewerng/viewer?embedded=true&url={encoded_url}"
 
     # Create indexes for frequently queried fields
     # collection.create_index([("target_document", ASCENDING)])
@@ -364,7 +391,7 @@ if check_password():
                                     second_node_color = get_color(second_doc['average_score'])
                                     net.add_node(second_filename, size=second_node_size, color=second_node_color, title=f"{second_filename}\nSimilarity: {second_doc['average_score']:.2f}", label=second_filename)
                                     net.add_edge(filename, second_filename, width=get_edge_width(second_doc['average_score']))
-                
+
                 # Save and display the graph
                 net.save_graph("graph.html")
                 HtmlFile = open("graph.html", 'r', encoding='utf-8')
@@ -398,6 +425,26 @@ if check_password():
                                 col1.metric("Average Score", f"{result['average_score']:.2f}")
                                 col2.metric("Confidence", f"{result['confidence_percentage']}%")
                                 col3.metric("Confidence Label", result['confidence_label'])
+
+                                st.write("**View Original PDFs:**")
+                                col1, col2 = st.columns(2)
+                                
+                                target_pdf_name = f"{row['filename']}"
+                                similar_pdf_name = f"{document_id_to_filename.get(result['document_id'], result['document_id'])}"
+                                
+                                target_pdf_url = get_pdf_url("marvad-ai-image", target_pdf_name)
+                                similar_pdf_url = get_pdf_url("marvad-ai-image", similar_pdf_name)
+                                
+                                target_viewer_url = get_google_drive_viewer_url(target_pdf_url)
+                                similar_viewer_url = get_google_drive_viewer_url(similar_pdf_url)
+                                
+                                with col1:
+                                    st.write("Target Document:")
+                                    st.markdown(f'<iframe src="{target_viewer_url}" width="100%" height="500px"></iframe>', unsafe_allow_html=True)
+                                
+                                with col2:
+                                    st.write("Similar Document:")
+                                    st.markdown(f'<iframe src="{similar_viewer_url}" width="100%" height="500px"></iframe>', unsafe_allow_html=True)
                                 
                                 st.write("**Matches:**")
                                 col1, col2, col3 = st.columns(3)
@@ -434,6 +481,7 @@ if check_password():
                                 st.write("**Top Matches (Images):**")
                                 for match in result['top_matches_images']:
                                     st.write(f"- {match}")
+                                
                         
                         st.write("---")
         else:
